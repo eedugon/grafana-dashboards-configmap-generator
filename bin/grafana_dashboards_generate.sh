@@ -41,6 +41,10 @@ test -z "$DATA_SIZE_LIMIT" && DATA_SIZE_LIMIT="240000" # in bytes
 # Changes type: in case of problems with k8s configmaps, try replace. Should be apply
 test -z "$APPLY_TYPE" && APPLY_TYPE="apply"
 
+# Input values verification
+echo "$DATA_SIZE_LIMIT" | grep -q "^[0-9]\+$" || { echo "ERROR: Incorrect value for DATA_SIZE_LIMIT: $DATA_SIZE_LIMIT. Number expected"; exit 1; }
+test "$APPLY_TYPE" != "create" && test "$APPLY_TYPE" != "apply" && test "$APPLY_TYPE" != "replace" && { echo "Unexpected APPLY_TYPE: $APPLY_TYPE"; exit 1; }
+
 # Other vars (do not change them)
 DATE_EXEC="$(date "+%Y-%m-%d-%H%M%S")"
 BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
