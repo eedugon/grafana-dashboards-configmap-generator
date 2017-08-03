@@ -235,7 +235,7 @@ if [ "$APPLY_CONFIGMAP" = "true" ]; then
   fi
 else
   echo
-  echo "# To apply the new configMap to your system to something like"
+  echo "# To apply the new configMap to your k8s system do something like:"
   echo "kubectl -n monitoring apply -f $(basename $OUTPUT_FILE)"
   echo
 fi
