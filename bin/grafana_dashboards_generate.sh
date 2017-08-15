@@ -8,22 +8,12 @@
 # Based on a configurable size limit, the tool will create 1 or N configmaps
 #   to allocate the .json resources (bin packing)
 
-# Other ideas
-# Add to configmap one or multiple dashboards
-# Remove from configMap one or multiple dashboards
-# Update ConfigMap in a cluster
-# Check and import updates of main public dashboards into templates directory
-
-# Other posibilities
-# accept variables to come from environment (DATA_SIZE_LIMIT, OUTPUT_FILE) instead of parameters
-# accept --size-limit or --output-file parameters
-
 # parameters
 # -o, --output-file
+# -i, --input-dir
 # -s, --size-limit
 # -x, --apply-configmap : true or false (default = false)
 # --apply-type : create, replace, apply (default = apply)
-
 
 #
 # Basic Functions
@@ -31,57 +21,51 @@
 echoSyntax() {
   echo "Usage: ${0} [options]"
   echo "Options:"
+  echo -e "\t-i dir, --input-dir dir"
+  echo -e "\t\tDirectory with grafana dashboards to process."
+  echo -e "\t\tImportant notes:"
+  echo -e "\t\t\tFiles should be suffixed with -dashboard.json or -datasource.json."
+  echo -e "\t\t\tWe don't recommend file names with spaces."
+  echo
   echo -e "\t-o file, --output-file file"
   echo -e "\t\tOutput file for config maps."
   echo
   echo -e "\t-s NUM, --size-limit NUM"
-  echo -e "\t\tSize limit in bytes for each dashboard."
+  echo -e "\t\tSize limit in bytes for each dashboard (default: 240000)"
   echo
   echo -e "\t-n namespace, --namespace namespace"
-  echo -e "\t\tNamespace for the configmap."
+  echo -e "\t\tNamespace for the configmap (default: monitoring)."
   echo
   echo -e "\t-x, --apply-configmap"
   echo -e "\t\tApplies the generated configmap with kubectl."
   echo
   echo -e "\t--apply-type"
-  echo -e "\t\tType of kubectl command. Accepted values: apply, replace, create."
+  echo -e "\t\tType of kubectl command. Accepted values: apply, replace, create (default: apply)."
 }
 
-# Configuration
-#
-# Main Variables
+
 # # Apply changes --> environment allowed
 # test -z "$APPLY_CONFIGMAP" && APPLY_CONFIGMAP="false"
-
-# # Namespace: currently hardcoded
-# NAMESPACE="monitoring"
-
 # # Size limit --> environment set allowed
 # test -z "$DATA_SIZE_LIMIT" && DATA_SIZE_LIMIT="240000" # in bytes
-
 # # Changes type: in case of problems with k8s configmaps, try replace. Should be apply
 # test -z "$APPLY_TYPE" && APPLY_TYPE="apply"
-
 # # Input values verification
 # echo "$DATA_SIZE_LIMIT" | grep -q "^[0-9]\+$" || { echo "ERROR: Incorrect value for DATA_SIZE_LIMIT: $DATA_SIZE_LIMIT. Number expected"; exit 1; }
 
-# Other vars (do not change them)
+# Base variables (do not change them)
 DATE_EXEC="$(date "+%Y-%m-%d-%H%M%S")"
 BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 TOOL_HOME="$(dirname $BIN_DIR)"
 SCRIPT_BASE=`basename $0 | sed "s/\.[Ss][Hh]//"`
 
-# echo "Debug: $TOOL_HOMELIB_DIR and $BIN_DIR"
 TEMPLATES_DIR="$TOOL_HOME/templates"
-
 DASHBOARD_HEADER_FILE="$TEMPLATES_DIR/dashboard.header"
 DASHBOARD_FOOT_FILE="$TEMPLATES_DIR/dashboard.foot"
 CONFIGMAP_HEADER="$TEMPLATES_DIR/ConfigMap.header"
-
 OUTPUT_BASE_DIR="$TOOL_HOME/output"
 
-
-# Default values
+# Some default values
 OUTPUT_FILE="$OUTPUT_BASE_DIR/grafana-dashboards-configMap-$DATE_EXEC.yaml"
 DASHBOARDS_DIR="$TEMPLATES_DIR/grafana-dashboards"
 
@@ -89,6 +73,8 @@ APPLY_CONFIGMAP="false"
 APPLY_TYPE="apply"
 DATA_SIZE_LIMIT="240000"
 NAMESPACE="monitoring"
+
+# Input parameters
 while (( "$#" )); do
     case "$1" in
         "-o" | "--output-file")
@@ -130,6 +116,7 @@ while (( "$#" )); do
     esac
     shift
 done
+
 #
 # Main Functions
 #
@@ -192,12 +179,12 @@ initialize-bin-pack() {
 bin-pack-files() {
   # Algorithm:
   # We process the files with no special order consideration
-  # We create a queue of "files to add to configmap" called "to_process"
+  # We create an array/queue of "files to add to configmap" called "to_process"
   # Size of the file is analyzed to determine if it can be added to the queue or not.
   # the max size of the queue is limited by DATA_SIZE_LIMIT
   # while there's room available in the queue we add files.
   # when there's no room we create a configmap with the members of the queue
-  #  before adding the file to the queue.
+  #  before adding the file to a cleaned queue
 
   # Counters initialization is not in the scope of this function
   local file=""
@@ -253,20 +240,19 @@ bin-pack-files() {
 }
 
 # Some variables checks...
-test ! -d "$OUTPUT_BASE_DIR" && { echo "ERROR: missing directory $OUTPUT_BASE_DIR"; exit 58; }
-test ! -d "$TEMPLATES_DIR" && { echo "ERROR: missing templates directory $TEMPLATES_DIR"; exit 60; }
+test ! -d "$TEMPLATES_DIR" && { echo "ERROR: missing templates directory $TEMPLATES_DIR"; exit 1; }
 
-test -f "$DASHBOARD_FOOT_FILE" || { echo "Template $DASHBOARD_FOOT_FILE not found"; exit 101; }
-test -f "$DASHBOARD_HEADER_FILE" || { echo "Template $DASHBOARD_HEADER_FILE not found"; exit 101; }
-test -f "$CONFIGMAP_HEADER" || { echo "Template $CONFIGMAP_HEADER not found"; exit 101; }
+test -f "$DASHBOARD_FOOT_FILE" || { echo "Template $DASHBOARD_FOOT_FILE not found"; exit 1; }
+test -f "$DASHBOARD_HEADER_FILE" || { echo "Template $DASHBOARD_HEADER_FILE not found"; exit 1; }
+test -f "$CONFIGMAP_HEADER" || { echo "Template $CONFIGMAP_HEADER not found"; exit 1; }
+
+test ! -d "$OUTPUT_BASE_DIR" && { echo "ERROR: missing directory $OUTPUT_BASE_DIR"; exit 1; }
 
 # Initial checks
-test -d "$DASHBOARDS_DIR" || { echo "Dashboards directory not found: $DASHBOARDS_DIR"; exit 1; }
+test -d "$DASHBOARDS_DIR" || { echo "ERROR: Dashboards directory not found: $DASHBOARDS_DIR"; echoSyntax; exit 1; }
 
 test -f "$OUTPUT_FILE" && { echo "ERROR: Output file already exists: $OUTPUT_FILE"; exit 1; }
 touch $OUTPUT_FILE || { echo "ERROR: Unable to create or modify $OUTPUT_FILE"; exit 1; }
-
-
 
 # Main code start
 
@@ -326,6 +312,6 @@ if [ "$APPLY_CONFIGMAP" = "true" ]; then
 else
   echo
   echo "# To apply the new configMap to your k8s system do something like:"
-  echo "kubectl -n monitoring apply -f $(basename $OUTPUT_FILE)"
+  echo "kubectl -n monitoring $APPLY_TYPE -f $(basename $OUTPUT_FILE)"
   echo
 fi
