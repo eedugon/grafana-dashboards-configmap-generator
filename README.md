@@ -38,8 +38,8 @@ Just execute the .sh under bin/ directory. The output will be placed in the outp
 Examples:
 ```bash
 $ ./grafana_dashboards_generate.sh
-$ grafana-dashboards-configmap-generator/bin/grafana_dashboards_generate.sh -o manifests/grafana/grafana-dashboards.yaml -i assets/grafana-dashboards
-$ grafana-dashboards-configmap/bin/grafana_dashboards_generate.sh -s 1000000 --apply-configmap --apply-type replace
+$ bin/grafana_dashboards_generate.sh -o manifests/grafana/grafana-dashboards.yaml -i assets/grafana-dashboards
+$ bin/grafana_dashboards_generate.sh -s 1000000 --apply-configmap --apply-type replace
 
 # Note: the output file, if provided with -o, shouldn't exist.
 ```
