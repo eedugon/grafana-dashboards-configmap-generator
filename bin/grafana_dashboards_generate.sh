@@ -267,10 +267,10 @@ echo
 initialize-bin-pack
 
 # Process dashboards
-bin-pack-files "$(find $DASHBOARDS_DIR -maxdepth 1 -type f -name "*-dashboard.json")"
+bin-pack-files "$(find $DASHBOARDS_DIR -maxdepth 1 -type f -name "*-dashboard.json" | sort)"
 
 # Continue processing datasources (maintaining the same queue)
-bin-pack-files "$(find $DASHBOARDS_DIR -maxdepth 1 -type f -name "*-datasource.json" )"
+bin-pack-files "$(find $DASHBOARDS_DIR -maxdepth 1 -type f -name "*-datasource.json" | sort )"
 
 # Processing remaining data in the queue (or unique)
 if [ "$to_process" ]; then
