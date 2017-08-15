@@ -8,6 +8,7 @@ The tool reads the content of a directory with grafana .json resources (dashboar
 Based on a configurable size limit, the tool will create 1 or N configmaps to allocate the .json resources (bin packing). If the limit is reached then the configmaps generated will have names like grafana-dashboards-0, grafana-dashboards-1, etc, and if the limit is not reached the configmap generated will be called "grafana-dashboards".
 
 Input Parameters Allowed:
+```bash
 	-i dir, --input-dir dir
 		Directory with grafana dashboards to process.
 		Important notes:
@@ -28,7 +29,7 @@ Input Parameters Allowed:
 
 	--apply-type
 		Type of kubectl command. Accepted values: apply, replace, create (default: apply).
-
+```
 
 ## Usage
 
