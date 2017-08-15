@@ -9,26 +9,26 @@ Based on a configurable size limit, the tool will create 1 or N configmaps to al
 
 Input Parameters Allowed:
 ```bash
-	-i dir, --input-dir dir
-		Directory with grafana dashboards to process.
-		Important notes:
-			Files should be suffixed with -dashboard.json or -datasource.json.
-			We don't recommend file names with spaces.
+-i dir, --input-dir dir
+  Directory with grafana dashboards to process.
+  Important notes:
+    Files should be suffixed with -dashboard.json or -datasource.json.
+    We don't recommend file names with spaces.
 
-	-o file, --output-file file
-		Output file for config maps.
+-o file, --output-file file
+  Output file for config maps.
 
-	-s NUM, --size-limit NUM
-		Size limit in bytes for each dashboard (default: 240000)
+-s NUM, --size-limit NUM
+  Size limit in bytes for each dashboard (default: 240000)
 
-	-n namespace, --namespace namespace
-		Namespace for the configmap (default: monitoring).
+-n namespace, --namespace namespace
+  Namespace for the configmap (default: monitoring).
 
-	-x, --apply-configmap
-		Applies the generated configmap with kubectl.
+-x, --apply-configmap
+  Applies the generated configmap with kubectl.
 
-	--apply-type
-		Type of kubectl command. Accepted values: apply, replace, create (default: apply).
+--apply-type
+  Type of kubectl command. Accepted values: apply, replace, create (default: apply).
 ```
 
 ## Usage
