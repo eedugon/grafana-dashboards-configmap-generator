@@ -62,6 +62,11 @@ CONFIGMAP_HEADER="$TEMPLATES_DIR/ConfigMap.header"
 OUTPUT_BASE_DIR="$TOOL_HOME/output"
 OUTPUT_FILE="$OUTPUT_BASE_DIR/grafana-dashboards-configMap-$DATE_EXEC.yaml"
 
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  STAT_PARAM="-f %z"
+else
+  STAT_PARAM="-c%s"
+fi
 #
 # Main Functions
 #
@@ -133,7 +138,7 @@ bin-pack-files() {
   for file in $@; do
 #    echo "debug: Processing file $(basename $file)"
 
-    file_size_bytes="$(stat -c%s "$file")"
+    file_size_bytes="$(stat $STAT_PARAM "$file")"
 
     # If the file is bigger than the configured limit we skip it file
     if [ "$file_size_bytes" -gt "$DATA_SIZE_LIMIT" ]; then
