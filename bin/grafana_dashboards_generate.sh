@@ -8,59 +8,114 @@
 # Based on a configurable size limit, the tool will create 1 or N configmaps
 #   to allocate the .json resources (bin packing)
 
-# Other ideas
-# Add to configmap one or multiple dashboards
-# Remove from configMap one or multiple dashboards
-# Update ConfigMap in a cluster
-# Check and import updates of main public dashboards into templates directory
-
-# Other posibilities
-# accept variables to come from environment (DATA_SIZE_LIMIT, OUTPUT_FILE) instead of parameters
-# accept --size-limit or --output-file parameters
+# parameters
+# -o, --output-file
+# -i, --input-dir
+# -s, --size-limit
+# -x, --apply-configmap : true or false (default = false)
+# --apply-type : create, replace, apply (default = apply)
 
 #
 # Basic Functions
 #
 echoSyntax() {
+  echo "Usage: ${0} [options]"
+  echo "Options:"
+  echo -e "\t-i dir, --input-dir dir"
+  echo -e "\t\tDirectory with grafana dashboards to process."
+  echo -e "\t\tImportant notes:"
+  echo -e "\t\t\tFiles should be suffixed with -dashboard.json or -datasource.json."
+  echo -e "\t\t\tWe don't recommend file names with spaces."
   echo
-  echo "Syntax: $(basename $0) [--apply]"
+  echo -e "\t-o file, --output-file file"
+  echo -e "\t\tOutput file for config maps."
+  echo
+  echo -e "\t-s NUM, --size-limit NUM"
+  echo -e "\t\tSize limit in bytes for each dashboard (default: 240000)"
+  echo
+  echo -e "\t-n namespace, --namespace namespace"
+  echo -e "\t\tNamespace for the configmap (default: monitoring)."
+  echo
+  echo -e "\t-x, --apply-configmap"
+  echo -e "\t\tApplies the generated configmap with kubectl."
+  echo
+  echo -e "\t--apply-type"
+  echo -e "\t\tType of kubectl command. Accepted values: apply, replace, create (default: apply)."
 }
 
-# Configuration
-#
-# Main Variables
-#
-# Apply changes --> environment allowed
-test -z "$APPLY_CONFIGMAP" && APPLY_CONFIGMAP="false"
-# Namespace: currently hardcoded
-NAMESPACE="monitoring"
 
-# Size limit --> environment set allowed
-test -z "$DATA_SIZE_LIMIT" && DATA_SIZE_LIMIT="240000" # in bytes
+# # Apply changes --> environment allowed
+# test -z "$APPLY_CONFIGMAP" && APPLY_CONFIGMAP="false"
+# # Size limit --> environment set allowed
+# test -z "$DATA_SIZE_LIMIT" && DATA_SIZE_LIMIT="240000" # in bytes
+# # Changes type: in case of problems with k8s configmaps, try replace. Should be apply
+# test -z "$APPLY_TYPE" && APPLY_TYPE="apply"
+# # Input values verification
+# echo "$DATA_SIZE_LIMIT" | grep -q "^[0-9]\+$" || { echo "ERROR: Incorrect value for DATA_SIZE_LIMIT: $DATA_SIZE_LIMIT. Number expected"; exit 1; }
 
-# Changes type: in case of problems with k8s configmaps, try replace. Should be apply
-test -z "$APPLY_TYPE" && APPLY_TYPE="apply"
-
-# Input values verification
-echo "$DATA_SIZE_LIMIT" | grep -q "^[0-9]\+$" || { echo "ERROR: Incorrect value for DATA_SIZE_LIMIT: $DATA_SIZE_LIMIT. Number expected"; exit 1; }
-test "$APPLY_TYPE" != "create" && test "$APPLY_TYPE" != "apply" && test "$APPLY_TYPE" != "replace" && { echo "Unexpected APPLY_TYPE: $APPLY_TYPE"; exit 1; }
-
-# Other vars (do not change them)
+# Base variables (do not change them)
 DATE_EXEC="$(date "+%Y-%m-%d-%H%M%S")"
 BIN_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 TOOL_HOME="$(dirname $BIN_DIR)"
 SCRIPT_BASE=`basename $0 | sed "s/\.[Ss][Hh]//"`
-# echo "Debug: $TOOL_HOMELIB_DIR and $BIN_DIR"
-LIB_DIR="$TOOL_HOME/lib"
-TEMPLATES_DIR="$TOOL_HOME/templates"
-DASHBOARDS_DIR="$TEMPLATES_DIR/grafana-dashboards"
 
+TEMPLATES_DIR="$TOOL_HOME/templates"
 DASHBOARD_HEADER_FILE="$TEMPLATES_DIR/dashboard.header"
 DASHBOARD_FOOT_FILE="$TEMPLATES_DIR/dashboard.foot"
 CONFIGMAP_HEADER="$TEMPLATES_DIR/ConfigMap.header"
-
 OUTPUT_BASE_DIR="$TOOL_HOME/output"
+
+# Some default values
 OUTPUT_FILE="$OUTPUT_BASE_DIR/grafana-dashboards-configMap-$DATE_EXEC.yaml"
+DASHBOARDS_DIR="$TEMPLATES_DIR/grafana-dashboards"
+
+APPLY_CONFIGMAP="false"
+APPLY_TYPE="apply"
+DATA_SIZE_LIMIT="240000"
+NAMESPACE="monitoring"
+
+# Input parameters
+while (( "$#" )); do
+    case "$1" in
+        "-o" | "--output-file")
+            OUTPUT_FILE="$2"
+            shift
+            ;;
+        "-i" | "--input-dir")
+            DASHBOARDS_DIR="$2"
+            shift
+            ;;
+        "-n" | "--namespace")
+            NAMESPACE="$2"
+            shift
+            ;;
+        "-x" | "--apply-configmap")
+            APPLY_CONFIGMAP="true"
+            ;;
+        "--apply-type")
+            APPLY_TYPE="$2"
+            test "$APPLY_TYPE" != "create" && test "$APPLY_TYPE" != "apply" && test "$APPLY_TYPE" != "replace" && { echo "Unexpected APPLY_TYPE: $APPLY_TYPE"; exit 1; }
+            shift
+            ;;
+        "-s"|"--size-limit")
+            if ! ( echo $2 | grep -q '^[0-9]\+$') || [ $2 -eq 0 ]; then
+                echo "Invalid value for size limit '$2'"
+                exit 1
+            fi
+            DATA_SIZE_LIMIT=$2
+            shift
+            ;;
+        "-h"|"--help")
+            echoSyntax
+            exit 0
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            exit 1
+            ;;
+    esac
+    shift
+done
 
 #
 # Main Functions
@@ -78,13 +133,15 @@ addConfigMapHeader() {
   fi
 }
 
-addFilesToConfigMap() {
+addArrayToConfigMap() {
+  # This function process the array to_process into a configmap
 
-  test "$#" -ge 1 || { echo "# INTERNAL ERROR: Wrong call to function addFilesToConfigMap"; return 1; }
-  local files="$@"
-  local file=""
+  local OLDIFS=$IFS
+  local IFS=$'\n'
+  for file in ${to_process[@]}; do
+    # check that file exists
+    test -f "$file" || { echo "# INTERNAL ERROR IN ARRAY: File not found: $file"; continue; }
 
-  for file in $files; do
     # detection of type (dashboard or datasource)
     type=""
     basename "$file" | grep -q "\-datasource" && type="datasource"
@@ -105,13 +162,15 @@ addFilesToConfigMap() {
     test "$type" = "dashboard" && cat $DASHBOARD_FOOT_FILE
   done
   echo "---"
+
+  IFS=$OLDIFS
   return 0
 }
 
 initialize-bin-pack() {
   # We separate initialization to reuse the bin-pack for different sets of files.
   n="0"
-  to_process=""
+  to_process=()
   bytes_to_process="0"
   total_files_processed="0"
   total_configmaps_created="0"
@@ -120,17 +179,22 @@ initialize-bin-pack() {
 bin-pack-files() {
   # Algorithm:
   # We process the files with no special order consideration
-  # We create a queue of "files to add to configmap" called "to_process"
+  # We create an array/queue of "files to add to configmap" called "to_process"
   # Size of the file is analyzed to determine if it can be added to the queue or not.
   # the max size of the queue is limited by DATA_SIZE_LIMIT
   # while there's room available in the queue we add files.
   # when there's no room we create a configmap with the members of the queue
-  #  before adding the file to the queue.
+  #  before adding the file to a cleaned queue
 
   # Counters initialization is not in the scope of this function
   local file=""
+  OLDIFS=$IFS
+  IFS=$'\n'
+#  echo "DEBUG bin-pack:"
+#  echo "$@"
 
   for file in $@; do
+    test -f "$file" || { echo "# INTERNAL ERROR: File not found: $file"; continue; }
 #    echo "debug: Processing file $(basename $file)"
 
     file_size_bytes="$(stat -c%s "$file")"
@@ -144,7 +208,8 @@ bin-pack-files() {
 
     if test "$(expr "$bytes_to_process" + "$file_size_bytes")" -le "$DATA_SIZE_LIMIT"; then
       # We have room to include the file in the configmap
-      test "$to_process" && to_process="$to_process $file" || to_process="$file"
+      # test "$to_process" && to_process="$to_process $file" || to_process="$file"
+      to_process+=("$file")
       (( bytes_to_process = bytes_to_process + file_size_bytes ))
       echo "# File $(basename $file) : added to queue"
     else
@@ -155,11 +220,13 @@ bin-pack-files() {
         echo
         # Create a new configmap
         addConfigMapHeader $n >> $OUTPUT_FILE || { echo "ERROR in call to addConfigMapHeader function"; exit 1; }
-        addFilesToConfigMap $to_process >> $OUTPUT_FILE || { echo "ERROR in call to addFilesToConfigMap function"; exit 1; }
+        addArrayToConfigMap >> $OUTPUT_FILE || { echo "ERROR in call to addArrayToConfigMap function"; exit 1; }
         # Initialize variables with info about file not processed
         (( total_configmaps_created++ ))
         (( n++ ))
-        to_process="$file"
+        # to_process="$file"
+        to_process=()
+        to_process+=("$file")
         bytes_to_process="$file_size_bytes"
         echo "# File $(basename $file) : added to queue"
       else
@@ -169,22 +236,26 @@ bin-pack-files() {
       fi
     fi
   done
+  IFS=$OLDIFS
 }
 
 # Some variables checks...
-test ! -d "$OUTPUT_BASE_DIR" && { echo "ERROR: missing directory $OUTPUT_BASE_DIR"; exit 58; }
-test ! -d "$TEMPLATES_DIR" && { echo "ERROR: missing templates directory $TEMPLATES_DIR"; exit 60; }
+test ! -d "$TEMPLATES_DIR" && { echo "ERROR: missing templates directory $TEMPLATES_DIR"; exit 1; }
 
-test -f "$DASHBOARD_FOOT_FILE" || { echo "Template $DASHBOARD_FOOT_FILE not found"; exit 101; }
-test -f "$DASHBOARD_HEADER_FILE" || { echo "Template $DASHBOARD_HEADER_FILE not found"; exit 101; }
-test -f "$CONFIGMAP_HEADER" || { echo "Template $CONFIGMAP_HEADER not found"; exit 101; }
+test -f "$DASHBOARD_FOOT_FILE" || { echo "Template $DASHBOARD_FOOT_FILE not found"; exit 1; }
+test -f "$DASHBOARD_HEADER_FILE" || { echo "Template $DASHBOARD_HEADER_FILE not found"; exit 1; }
+test -f "$CONFIGMAP_HEADER" || { echo "Template $CONFIGMAP_HEADER not found"; exit 1; }
+
+test ! -d "$OUTPUT_BASE_DIR" && { echo "ERROR: missing directory $OUTPUT_BASE_DIR"; exit 1; }
 
 # Initial checks
-test -f "$OUTPUT_FILE" && { echo "ERROR: Output file already exists: $OUTPUT_FILE"; exit 1; }
+test -d "$DASHBOARDS_DIR" || { echo "ERROR: Dashboards directory not found: $DASHBOARDS_DIR"; echoSyntax; exit 1; }
 
+test -f "$OUTPUT_FILE" && { echo "ERROR: Output file already exists: $OUTPUT_FILE"; exit 1; }
 touch $OUTPUT_FILE || { echo "ERROR: Unable to create or modify $OUTPUT_FILE"; exit 1; }
 
 # Main code start
+
 echo "# Starting execution of $SCRIPT_BASE on $DATE_EXEC"
 echo "# Configured size limit: $DATA_SIZE_LIMIT bytes"
 echo "# Grafna input dashboards and datasources will be read from: $DASHBOARDS_DIR"
@@ -196,10 +267,10 @@ echo
 initialize-bin-pack
 
 # Process dashboards
-bin-pack-files $(find $DASHBOARDS_DIR -maxdepth 1 -type f -name "*-dashboard.json")
+bin-pack-files "$(find $DASHBOARDS_DIR -maxdepth 1 -type f -name "*-dashboard.json" | sort)"
 
 # Continue processing datasources (maintaining the same queue)
-bin-pack-files $(find $DASHBOARDS_DIR -maxdepth 1 -type f -name "*-datasource.json" )
+bin-pack-files "$(find $DASHBOARDS_DIR -maxdepth 1 -type f -name "*-datasource.json" | sort )"
 
 # Processing remaining data in the queue (or unique)
 if [ "$to_process" ]; then
@@ -214,8 +285,9 @@ if [ "$to_process" ]; then
     echo
     addConfigMapHeader $n >> $OUTPUT_FILE || { echo "ERROR in call to addConfigMapHeader function"; exit 1; }
   fi
-  addFilesToConfigMap $to_process >> $OUTPUT_FILE || { echo "ERROR in call to addFilesToConfigMap function"; exit 1; }
+  addArrayToConfigMap >> $OUTPUT_FILE || { echo "ERROR in call to addArrayToConfigMap function"; exit 1; }
   (( total_configmaps_created++ ))
+  to_process=()
 fi
 
 echo "# Process completed, configmap created: $(basename $OUTPUT_FILE)"
@@ -240,6 +312,6 @@ if [ "$APPLY_CONFIGMAP" = "true" ]; then
 else
   echo
   echo "# To apply the new configMap to your k8s system do something like:"
-  echo "kubectl -n monitoring apply -f $(basename $OUTPUT_FILE)"
+  echo "kubectl -n monitoring $APPLY_TYPE -f $(basename $OUTPUT_FILE)"
   echo
 fi
