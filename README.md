@@ -1,5 +1,16 @@
 # Grafana Dashboards Configmap Generator
 
+## IMPORTANT NOTE:
+
+This code has been moved and it's now part of `prometheus-operator` project.
+Check https://github.com/coreos/prometheus-operator.
+The code is under `contrib/kube-prometheus/hack/grafana-dashboards-configmap-generator` directory.
+
+Latest improvements available in `prometheus-operator` release are:
+* The tool also generates a grafana-deployment.yaml aligned with the configmaps generated.
+
+(I will update this repository with latest code soon).
+
 ## Description:
 Tool to maintain grafana dashboards' configmap for a grafana deployed with kube-prometheus (a tool inside prometheus-operator).
 
