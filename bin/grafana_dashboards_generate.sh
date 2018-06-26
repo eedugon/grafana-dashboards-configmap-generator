@@ -117,6 +117,11 @@ while (( "$#" )); do
     shift
 done
 
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  STAT_PARAM="-f %z"
+else
+  STAT_PARAM="-c%s"
+fi
 #
 # Main Functions
 #
@@ -197,7 +202,7 @@ bin-pack-files() {
     test -f "$file" || { echo "# INTERNAL ERROR: File not found: $file"; continue; }
 #    echo "debug: Processing file $(basename $file)"
 
-    file_size_bytes="$(stat -c%s "$file")"
+    file_size_bytes="$(stat $STAT_PARAM "$file")"
 
     # If the file is bigger than the configured limit we skip it file
     if [ "$file_size_bytes" -gt "$DATA_SIZE_LIMIT" ]; then
